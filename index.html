@@ -1,13 +1,583 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <title>我的测试页面</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#f0f4ff">
+  <title>智能用药提醒</title>
+  <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22%E6%99%BA%E8%83%BD%E7%94%A8%E8%8D%AF%E6%8F%90%E9%86%92%22%2C%22short_name%22%3A%22%E7%94%A8%E8%8D%AF%E6%8F%90%E9%86%92%22%2C%22start_url%22%3A%22.%2F%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23f0f4ff%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%20100%20100'%3E%3Ctext%20font-size%3D'80'%20x%3D'10'%20y%3D'80'%3E%F0%9F%92%8A%3C%2Ftext%3E%3C%2Fsvg%3E%22%2C%22sizes%22%3A%22100x100%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 100%);
+      color: #1e293b;
+      min-height: 100vh;
+      padding: 16px;
+      user-select: none;
+      -webkit-user-select: none;
+      background-attachment: fixed;
+    }
+    .app{max-width:500px;margin:0 auto;display:flex;flex-direction:column;gap:16px;padding-bottom:100px;}
+
+    /* 卡片风格 */
+    .card{
+      background: rgba(255,255,255,0.85);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-radius: 28px;
+      padding: 18px 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.03);
+      border: 1px solid rgba(255,255,255,0.6);
+    }
+
+    /* 头部 */
+    .header{display:flex;align-items:center;gap:12px;}
+    .header-icon{
+      font-size: 42px;
+      background: linear-gradient(135deg, #4f8cf5, #3b6ed4);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      cursor: pointer;
+    }
+    .header-title{font-weight:700;font-size:22px;color:#1e293b;}
+    .header-date{color:#64748b;font-size:13px;}
+
+    /* 今日统计卡片 */
+    .stats{display:flex;gap:10px;}
+    .stat{
+      flex:1;background: rgba(255,255,255,0.7);
+      backdrop-filter: blur(10px);-webkit-backdrop-filter: blur(10px);
+      border-radius: 20px;padding:14px 10px;text-align:center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+    }
+    .stat-num{font-size:30px;font-weight:700;}
+    .stat-label{font-size:11px;color:#64748b;margin-top:4px;}
+
+    /* 圆环进度 */
+    .progress-ring-wrap{display:flex;justify-content:center;margin:8px 0;}
+    .progress-ring{position:relative;width:80px;height:80px;}
+    .progress-ring svg{transform: rotate(-90deg);width:80px;height:80px;}
+    .progress-ring .bg{fill:none;stroke:#e2e8f0;stroke-width:8;}
+    .progress-ring .fill{fill:none;stroke:#3b82f6;stroke-width:8;stroke-linecap:round;transition: stroke-dashoffset 0.5s;}
+    .progress-ring .percent-text{
+      position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+      font-size:18px;font-weight:700;color:#1e293b;
+    }
+
+    /* 药物列表 */
+    .section-title{
+      font-size:15px;font-weight:600;margin:6px 0 4px 8px;color:#334155;
+      display:flex;align-items:center;gap:6px;
+    }
+    .med-item{
+      background: rgba(255,255,255,0.8);
+      backdrop-filter: blur(6px);-webkit-backdrop-filter: blur(6px);
+      border-radius: 20px;padding:14px;margin-bottom:10px;
+      border-left: 5px solid #3b82f6;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+      transition: all 0.2s;
+    }
+    .med-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+    .med-name{font-weight:600;font-size:16px;}
+    .med-type{
+      font-size:11px;background:#e2e8f0;padding:2px 8px;border-radius:12px;
+    }
+    .img-thumb{
+      width:44px;height:44px;border-radius:14px;object-fit:cover;border:1px solid #e2e8f0;
+    }
+    .progress-bar{width:100%;height:5px;background:#e2e8f0;border-radius:5px;margin-top:8px;overflow:hidden;}
+    .progress-fill{height:100%;background:linear-gradient(90deg,#3b82f6,#60a5fa);border-radius:5px;transition:width 0.3s;}
+
+    .times{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+    .time-chip{
+      padding:6px 12px;border-radius:20px;font-size:13px;font-weight:500;
+      background:#f1f5f9;cursor:pointer;display:flex;align-items:center;gap:4px;
+      transition: all 0.2s;
+    }
+    .time-chip.taken{background:#dcfce7;color:#166534;}
+    .time-chip.missed{background:#fee2e2;color:#991b1b;}
+    .time-chip.pending{background:#fef9c3;color:#854d0e;}
+
+    /* 日历热力图 */
+    .calendar-grid{
+      display:grid;grid-template-columns: repeat(7,1fr);
+      gap:4px;margin-top:8px;
+    }
+    .cal-day{
+      aspect-ratio:1;border-radius:8px;display:flex;align-items:center;justify-content:center;
+      font-size:12px;font-weight:500;background:rgba(255,255,255,0.5);
+    }
+    .cal-day.taken-all{background:#bbf7d0;color:#166534;}
+    .cal-day.missed-some{background:#fecaca;color:#991b1b;}
+    .cal-day.pending{background:#fef9c3;color:#854d0e;}
+    .cal-day.future{background:transparent;color:#cbd5e1;}
+
+    /* 按钮 */
+    .btn{
+      padding:10px 18px;border-radius:20px;border:none;font-weight:600;
+      background: linear-gradient(135deg, #4f8cf5, #3b6ed4);
+      color:#fff;cursor:pointer;font-size:14px;box-shadow:0 4px 10px rgba(59,130,246,0.2);
+      transition: all 0.2s;
+    }
+    .btn:active{transform:scale(0.96);}
+    .btn-outline{
+      background:transparent;color:#3b82f6;border:1px solid #3b82f6;
+      box-shadow:none;
+    }
+    .fab{
+      position:fixed;bottom:28px;right:28px;
+      width:58px;height:58px;border-radius:50%;
+      background: linear-gradient(135deg, #4f8cf5, #3b6ed4);
+      color:#fff;border:none;font-size:30px;cursor:pointer;
+      box-shadow: 0 10px 25px rgba(59,130,246,0.35);
+      z-index:10;display:flex;align-items:center;justify-content:center;
+      transition: all 0.2s;
+    }
+    .fab:active{transform:scale(0.9);}
+
+    /* 弹窗 */
+    .modal{
+      position:fixed;inset:0;background:rgba(0,0,0,0.4);
+      display:flex;align-items:flex-end;justify-content:center;
+      z-index:200;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+    }
+    .modal-content{
+      background:#fff;width:100%;max-width:500px;border-radius:28px 28px 0 0;
+      padding:20px;max-height:85vh;overflow-y:auto;
+      animation:slideUp 0.3s ease;
+    }
+    @keyframes slideUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
+    .reminder-overlay{
+      position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:300;
+      display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);
+    }
+    .reminder-box{
+      background:#fff;border-radius:28px;padding:24px;width:90%;max-width:400px;
+      box-shadow:0 25px 50px rgba(0,0,0,0.2);
+      animation:pop 0.3s ease;
+    }
+    @keyframes pop{from{transform:scale(0.9);opacity:0;}to{transform:scale(1);opacity:1;}}
+    .alert-siren{
+      position:fixed;inset:0;background:rgba(220,38,38,0.95);z-index:400;
+      display:flex;align-items:center;justify-content:center;flex-direction:column;
+      color:#fff;text-align:center;padding:20px;backdrop-filter:blur(4px);
+    }
+    .alert-siren h2{font-size:30px;margin-bottom:12px;}
+    .alert-siren button{
+      padding:14px 28px;border-radius:30px;border:none;font-weight:700;
+      background:#fff;color:#dc2626;font-size:18px;cursor:pointer;margin:8px;
+    }
+    input,select,button{font-size:16px;padding:10px;border-radius:14px;border:1px solid #cbd5e1;width:100%;margin-bottom:10px;background:#f8fafc;}
+    .form-row{display:flex;gap:8px;align-items:center;}
+    .form-row input,.form-row select{flex:1;margin-bottom:0;}
+
+    .install-guide{
+      position:fixed;inset:0;background:#fff;z-index:1000;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      text-align:center;padding:20px;
+    }
+    .install-guide h2{font-size:24px;margin-bottom:16px;}
+    .hidden{display:none !important;}
+  </style>
 </head>
 <body>
-    <h1>恭喜！部署成功！</h1>
-    如果看到这句话，说明你的网站已经活过来了！
+<div id="app" class="app"></div>
+<button class="fab" id="addBtn">+</button>
+<div id="installGuide" class="install-guide hidden">
+  <h2>📲 安装到桌面</h2>
+  <p>1. 微信内点“…”→“在浏览器中打开”</p>
+  <p>2. 苹果：点分享→添加到主屏幕</p>
+  <p>3. 安卓：点菜单→添加到主屏幕</p>
+  <button class="btn" id="closeGuideBtn" style="margin-top:20px;">知道了</button>
+</div>
+
+<script>
+(function(){
+  /* ========== 数据库 ========== */
+  const DB_NAME='pillReminderDB_V4';
+  let db;
+  async function openDB(){
+    return new Promise((resolve,reject)=>{
+      const req=indexedDB.open(DB_NAME,2);
+      req.onupgradeneeded=(e)=>{
+        const d=e.target.result;
+        if(!d.objectStoreNames.contains('meds')) d.createObjectStore('meds',{keyPath:'id'});
+        if(!d.objectStoreNames.contains('recs')) d.createObjectStore('recs',{keyPath:'key'});
+        if(!d.objectStoreNames.contains('contacts')) d.createObjectStore('contacts',{keyPath:'id'});
+      };
+      req.onsuccess=(e)=>{db=e.target.result;resolve(db);};
+      req.onerror=(e)=>reject(e.target.error);
+    });
+  }
+  async function dbGet(s,k){try{const t=db.transaction(s,'readonly');return new Promise((r,j)=>{const q=t.objectStore(s).get(k);q.onsuccess=()=>r(q.result);q.onerror=j;});}catch(e){return null;}}
+  async function dbGetAll(s){try{const t=db.transaction(s,'readonly');return new Promise((r,j)=>{const q=t.objectStore(s).getAll();q.onsuccess=()=>r(q.result);q.onerror=j;});}catch(e){return[];}}
+  async function dbPut(s,i){try{const t=db.transaction(s,'readwrite');await new Promise((r,j)=>{const q=t.objectStore(s).put(i);q.onsuccess=r;q.onerror=j;});}catch(e){}}
+  async function dbDel(s,k){try{const t=db.transaction(s,'readwrite');await new Promise((r,j)=>{const q=t.objectStore(s).delete(k);q.onsuccess=r;q.onerror=j;});}catch(e){}}
+
+  /* ========== 工具 ========== */
+  function today(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+  function nowTime(){const d=new Date();return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;}
+  function compressImg(file,mW=800,q=0.6){
+    return new Promise(r=>{
+      const reader=new FileReader();
+      reader.onload=e=>{
+        const img=new Image();
+        img.onload=()=>{
+          const c=document.createElement('canvas');
+          let w=img.width,h=img.height;
+          if(w>mW){h*=mW/w;w=mW;}
+          c.width=w;c.height=h;
+          c.getContext('2d').drawImage(img,0,0,w,h);
+          r(c.toDataURL('image/jpeg',q));
+        };
+        img.src=e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /* ========== 数据层 ========== */
+  async function loadMeds(){return await dbGetAll('meds');}
+  async function saveMed(m){await dbPut('meds',m);}
+  async function delMed(id){await dbDel('meds',id);}
+  async function isTaken(medId,time){
+    const key=`${today()}||${medId}||${time}`;
+    return !!(await dbGet('recs',key));
+  }
+  async function markTaken(medId,time){
+    await dbPut('recs',{key:`${today()}||${medId}||${time}`,taken:true,at:nowTime()});
+  }
+  async function unmarkTaken(medId,time){
+    await dbDel('recs',`${today()}||${medId}||${time}`);
+  }
+  async function loadContacts(){return await dbGetAll('contacts');}
+  async function saveContact(c){await dbPut('contacts',c);}
+  async function delContact(id){await dbDel('contacts',id);}
+
+  /* ========== 音效 ========== */
+  let audioCtx;
+  function getCtx(){
+    try{
+      if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+      if(audioCtx.state==='suspended') audioCtx.resume();
+      return audioCtx;
+    }catch(e){return null;}
+  }
+  function playTone(f,d,t='sine',v=0.2){
+    try{
+      const c=getCtx();if(!c)return;
+      const o=c.createOscillator(),g=c.createGain();
+      o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,c.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d);
+      o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+d);
+    }catch(e){}
+  }
+  function playRemindMelody(){
+    [523,659,784].forEach((f,i)=>setTimeout(()=>playTone(f,0.18),i*180));
+    setTimeout(()=>playTone(1047,0.25,'triangle',0.2),540);
+  }
+  let sirenInt;
+  function startSiren(){
+    if(sirenInt)return;
+    sirenInt=setInterval(()=>{playTone(800,0.1,'square',0.4);setTimeout(()=>playTone(1000,0.1,'square',0.4),150);},400);
+  }
+  function stopSiren(){if(sirenInt){clearInterval(sirenInt);sirenInt=null;}}
+
+  /* ========== 通知与短信 ========== */
+  function notify(title,body){
+    try{if('Notification' in window&&Notification.permission==='granted') new Notification(title,{body,icon:'💊',tag:'pill',requireInteraction:true});}catch(e){}
+  }
+  function sendSMS(name,time,type){
+    window.location.href=`sms:?body=${encodeURIComponent(`提醒：家人漏服【${name}】(${time})，${type==='injection'?'注射':'口服'}，请提醒。`)}`;
+  }
+
+  /* ========== 全局状态 ========== */
+  let meds=[],contacts=[];
+  let curRem=null,alertOn=false;
+
+  /* ========== 渲染主界面 ========== */
+  async function renderApp(){
+    try{meds=await loadMeds();contacts=await loadContacts();}catch(e){}
+    const stats=await calcStats();
+    const app=document.getElementById('app');
+    const calHtml=await renderCalendar();
+    const ringPercent=stats.total?Math.round((stats.taken/stats.total)*100):0;
+    let html=`
+      <div class="card header">
+        <span class="header-icon" id="logoIcon">💊</span>
+        <div><div class="header-title">智能用药提醒</div><div class="header-date">${today()} ${nowTime()}</div></div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="stat-num" style="color:#16a34a;">${stats.taken}</div><div class="stat-label">已服用</div></div>
+        <div class="stat"><div class="stat-num" style="color:#3b82f6;">${stats.remaining}</div><div class="stat-label">待服用</div></div>
+        <div class="stat"><div class="stat-num" style="color:#dc2626;">${stats.missed}</div><div class="stat-label">已错过</div></div>
+      </div>
+      <div class="card">
+        <div class="section-title">📊 今日完成率</div>
+        <div class="progress-ring-wrap">
+          <div class="progress-ring">
+            <svg viewBox="0 0 80 80"><circle class="bg" cx="40" cy="40" r="34"/><circle class="fill" cx="40" cy="40" r="34" stroke-dasharray="213.6" stroke-dashoffset="${213.6*(1-ringPercent/100)}"/></svg>
+            <div class="percent-text">${ringPercent}%</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title">📅 本月打卡</div>
+        ${calHtml}
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div class="section-title" style="margin:0;">📋 我的药物</div>
+          <button class="btn btn-outline" onclick="openContactModal()" style="width:auto;padding:6px 14px;">👥 联系人</button>
+        </div>
+        <div style="margin-top:12px;">${await renderMedList()}</div>
+      </div>
+    `;
+    app.innerHTML=html;
+    document.title=stats.remaining?`(${stats.remaining}) 吃药提醒`:'💊 用药提醒';
+    bindClearEaster();
+  }
+
+  async function renderMedList(){
+    if(!meds.length) return '<div style="text-align:center;color:#94a3b8;padding:24px;">暂无药物，点右下角 + 添加</div>';
+    let h='';
+    for(const m of meds){
+      const typeBadge=m.type==='injection'?'💉 注射':'💊 口服';
+      const imgHtml=m.image?`<img src="${m.image}" class="img-thumb" alt="药">`:'';
+      let done=0; for(const t of m.times) if(await isTaken(m.id,t)) done++;
+      const percent=m.times.length?Math.round((done/m.times.length)*100):0;
+      let timesH='';
+      for(const t of m.times){
+        const taken=await isTaken(m.id,t);
+        const cls=taken?'taken':(t<=nowTime()?'missed':'pending');
+        const icon=taken?'✅':(t<=nowTime()?'⚠️':'⏰');
+        timesH+=`<span class="time-chip ${cls}" onclick="toggleTake('${m.id}','${t}')">${icon} ${t}</span>`;
+      }
+      h+=`<div class="med-item">
+        <div class="med-row">${imgHtml}<div style="flex:1;"><span class="med-name">${esc(m.name)}</span> <span class="med-type">${typeBadge}</span> ${m.dosage?`<span style="font-size:12px;color:#64748b;">· ${esc(m.dosage)}</span>`:''}</div>
+        <button onclick="editMed('${m.id}')" style="background:none;border:none;font-size:18px;">✏️</button>
+        <button onclick="delMed('${m.id}')" style="background:none;border:none;color:#dc2626;">🗑️</button></div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${percent}%;"></div></div>
+        <div class="times">${timesH}</div>
+      </div>`;
+    }
+    return h;
+  }
+
+  async function renderCalendar(){
+    const now=new Date();
+    const year=now.getFullYear(),month=now.getMonth();
+    const firstDay=new Date(year,month,1).getDay();
+    const daysInMonth=new Date(year,month+1,0).getDate();
+    let grid='';
+    for(let i=0;i<firstDay;i++) grid+='<div class="cal-day future"></div>';
+    for(let d=1;d<=daysInMonth;d++){
+      const dateStr=`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const isToday=dateStr===today();
+      let cls='pending';
+      // 简化：当日如果有记录且全部服用则为taken-all，有未服为missed-some
+      const allRecs=await dbGetAll('recs');
+      const dayRecs=allRecs.filter(r=>r.key.startsWith(dateStr));
+      if(dayRecs.length>0){
+        const allTaken=dayRecs.every(r=>r.taken);
+        cls=allTaken?'taken-all':'missed-some';
+      }else if(dateStr<today()){
+        cls='missed-some';
+      }else if(dateStr>today()){
+        cls='future';
+      }
+      grid+=`<div class="cal-day ${cls}" style="${isToday?'border:2px solid #3b82f6;':''}">${d}</div>`;
+    }
+    const weekDays='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;">'+['日','一','二','三','四','五','六'].map(w=>`<div style="text-align:center;font-size:11px;color:#64748b;">${w}</div>`).join('')+'</div>';
+    return weekDays+'<div class="calendar-grid">'+grid+'</div>';
+  }
+
+  async function calcStats(){
+    let taken=0,missed=0,remaining=0;
+    const now=nowTime();
+    for(const m of meds){
+      for(const t of m.times){
+        try{
+          if(await isTaken(m.id,t)) taken++;
+          else if(t<=now) missed++;
+          else remaining++;
+        }catch(e){}
+      }
+    }
+    return {taken,missed,remaining,total:taken+missed+remaining};
+  }
+
+  function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+
+  function bindClearEaster(){
+    const logo=document.getElementById('logoIcon');if(!logo)return;
+    let clicks=0;
+    logo.onclick=()=>{
+      if(++clicks>=5){
+        if(confirm('清空所有数据？')){
+          indexedDB.deleteDatabase(DB_NAME).then(()=>{alert('已清除');location.reload();});
+        }
+        clicks=0;
+      }
+    };
+  }
+
+  /* ========== 操作 ========== */
+  window.toggleTake=async(medId,time)=>{
+    try{
+      if(await isTaken(medId,time)) await unmarkTaken(medId,time);
+      else{await markTaken(medId,time);if(curRem){const all=await Promise.all(curRem.items.map(i=>isTaken(i.medId,i.time)));if(all.every(v=>v))closeRem();}}
+    }catch(e){}
+    renderApp();
+  };
+  window.editMed=(id)=>{const m=meds.find(x=>x.id===id);if(m)openMedModal(m);};
+  window.delMed=async(id)=>{if(confirm('删除？')){await delMed(id);renderApp();}};
+
+  function openMedModal(edit=null){
+    const modal=document.createElement('div');modal.className='modal';
+    const name=edit?.name||'',dosage=edit?.dosage||'',type=edit?.type||'pill';
+    const times=edit?.times||['08:00','12:30','18:30'],img=edit?.image||'';
+    modal.innerHTML=`
+      <div class="modal-content">
+        <h3>${edit?'编辑':'添加'}药物</h3>
+        <input id="mn" placeholder="名称" value="${esc(name)}">
+        <input id="md" placeholder="剂量" value="${esc(dosage)}">
+        <select id="mt"><option value="pill" ${type==='pill'?'selected':''}>💊口服</option><option value="injection" ${type==='injection'?'selected':''}>💉注射</option></select>
+        <div id="tc">${times.map(t=>`<div class="form-row"><input type="time" value="${t}" class="ti"><button onclick="this.parentElement.remove()" style="width:auto;">✕</button></div>`).join('')}</div>
+        <button onclick="document.getElementById('tc').insertAdjacentHTML('beforeend','<div class=form-row><input type=time value=12:00 class=ti><button onclick=this.parentElement.remove() style=width:auto>✕</button></div>')" style="width:auto;">+ 时间</button>
+        <div><label>📷 照片</label><input type="file" id="mi" accept="image/*" capture="environment"></div>
+        ${img?`<img src="${img}" style="width:70px;border-radius:14px;margin-top:6px;">`:''}
+        <div style="display:flex;gap:10px;margin-top:16px;"><button class="btn" id="sv">保存</button><button class="btn-outline btn" onclick="this.closest('.modal').remove()">取消</button></div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.querySelector('#sv').onclick=async()=>{
+      const n=modal.querySelector('#mn').value.trim();if(!n){alert('名称必填');return;}
+      const timesV=[...modal.querySelectorAll('.ti')].map(i=>i.value).filter(t=>t);
+      if(!timesV.length){alert('至少一个时间');return;}
+      const file=modal.querySelector('#mi').files[0];
+      let imgData=img;if(file) imgData=await compressImg(file);
+      await saveMed({id:edit?.id||Date.now().toString(36),name:n,dosage:modal.querySelector('#md').value.trim(),type:modal.querySelector('#mt').value,times:timesV.sort(),image:imgData,enabled:true});
+      modal.remove();renderApp();
+    };
+    modal.addEventListener('click',e=>{if(e.target===modal)modal.remove();});
+  }
+  document.getElementById('addBtn').onclick=()=>openMedModal();
+
+  /* ========== 提醒弹窗 ========== */
+  async function checkReminders(){
+    if(curRem)return;
+    const now=nowTime();const due=[];
+    for(const m of meds){if(m.enabled===false)continue;for(const t of m.times){if(t===now&&!(await isTaken(m.id,t))) due.push({medId:m.id,time:t,medName:m.name,dosage:m.dosage,image:m.image,type:m.type});}}
+    if(due.length) showReminder(due);
+  }
+  function showReminder(items){
+    if(curRem)closeRem();
+    const overlay=document.createElement('div');overlay.className='reminder-overlay';
+    overlay.innerHTML=`
+      <div class="reminder-box">
+        <div style="font-size:20px;font-weight:700;">⏰ ${nowTime()} 用药提醒</div>
+        <div style="margin:16px 0;">${items.map((it,idx)=>`
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;">
+            ${it.image?`<img src="${it.image}" style="width:40px;height:40px;border-radius:12px;object-fit:cover;">`:''}
+            <div style="flex:1;"><strong>${esc(it.medName)}</strong><span style="color:#64748b;font-size:13px;"> ${it.type==='injection'?'💉':'💊'} ${esc(it.dosage||'')}</span></div>
+            <input type="checkbox" class="rc" data-idx="${idx}">
+          </div>`).join('')}</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+          <span>稍后</span>
+          <select id="sm" class="snooze-select"><option value="5">5分钟</option><option value="10">10分钟</option><option value="15">15分钟</option><option value="30">30分钟</option></select>
+          <button class="btn-outline btn" id="sb" style="width:auto;">稍后</button>
+        </div>
+        <button class="btn" id="cb" disabled style="width:100%;">确认全部已服用</button>
+      </div>`;
+    document.body.appendChild(overlay);
+    const cbs=overlay.querySelectorAll('.rc');
+    const cbBtn=overlay.querySelector('#cb');
+    cbs.forEach(cb=>cb.addEventListener('change',()=>{cbBtn.disabled=![...cbs].every(c=>c.checked);}));
+    cbBtn.onclick=async()=>{for(const it of items) await markTaken(it.medId,it.time);closeRem();renderApp();};
+    overlay.querySelector('#sb').onclick=()=>{
+      const mins=parseInt(overlay.querySelector('#sm').value);closeRem();
+      setTimeout(async()=>{const still=[];for(const it of items){if(!(await isTaken(it.medId,it.time)))still.push(it);}if(still.length)showReminder(still);},mins*60000);
+      showToast(`已延迟${mins}分钟`);
+    };
+    curRem={overlay,items};playRemindMelody();notify('该用药了',items.map(i=>i.medName).join('、'));if(navigator.vibrate)navigator.vibrate([300,100,300]);
+  }
+  function closeRem(){if(curRem){curRem.overlay.remove();curRem=null;}}
+
+  /* ========== 漏服警铃 ========== */
+  async function checkMissed(){
+    if(alertOn)return;
+    const now=nowTime();
+    for(const m of meds){if(m.enabled===false)continue;for(const t of m.times){if(t<now&&!(await isTaken(m.id,t))){const key=`alert_${m.id}_${t}`;if(sessionStorage.getItem(key))continue;sessionStorage.setItem(key,'1');triggerAlert(m,t);return;}}}
+  }
+  function triggerAlert(med,time){
+    alertOn=true;startSiren();if(navigator.vibrate)navigator.vibrate([500,200,500,200,500]);
+    const div=document.createElement('div');div.className='alert-siren';
+    div.innerHTML=`<h2>🚨 漏服提醒</h2><p style="font-size:20px;">${esc(med.name)}</p><p>${time} ${med.type==='injection'?'💉':'💊'} ${med.dosage||''}</p>
+      <button onclick="dismissAlert()">我知道了</button>
+      <button onclick="notifyContact('${med.id}','${time}')" style="background:#fff;color:#1e293b;">📱 通知联系人</button>`;
+    document.body.appendChild(div);
+  }
+  window.dismissAlert=()=>{alertOn=false;stopSiren();document.querySelector('.alert-siren')?.remove();renderApp();};
+  window.notifyContact=(medId,time)=>{const m=meds.find(x=>x.id===medId);if(m)sendSMS(m.name,time,m.type);};
+
+  /* ========== 联系人 ========== */
+  window.openContactModal=async()=>{
+    contacts=await loadContacts();
+    const modal=document.createElement('div');modal.className='modal';
+    modal.innerHTML=`
+      <div class="modal-content"><h3>👥 紧急联系人</h3>
+        <div id="cl">${contacts.map(c=>`<div style="display:flex;justify-content:space-between;padding:6px 0;">${esc(c.name)} <button onclick="delContact('${c.id}')">🗑️</button></div>`).join('')||'暂无'}</div>
+        <div class="form-row"><input id="nc" placeholder="姓名"><button class="btn" id="ac" style="width:auto;">添加</button></div>
+        <button class="btn-outline btn" style="margin-top:8px;" onclick="this.closest('.modal').remove()">关闭</button>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.querySelector('#ac').onclick=async()=>{
+      const n=modal.querySelector('#nc').value.trim();if(!n)return;
+      await saveContact({id:Date.now().toString(36),name:n});contacts=await loadContacts();
+      modal.querySelector('#cl').innerHTML=contacts.map(c=>`<div>${esc(c.name)} <button onclick="delContact('${c.id}')">🗑️</button></div>`).join('');
+    };
+    modal.addEventListener('click',e=>{if(e.target===modal)modal.remove();});
+  };
+  window.delContact=async(id)=>{await delContact(id);contacts=await loadContacts();document.querySelector('#cl')&&(document.querySelector('#cl').innerHTML=contacts.map(c=>`<div>${esc(c.name)} <button onclick="delContact('${c.id}')">🗑️</button></div>`).join(''));};
+
+  function showToast(msg){
+    const t=document.createElement('div');t.textContent=msg;
+    t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:10px 20px;border-radius:20px;z-index:500;';
+    document.body.appendChild(t);setTimeout(()=>t.remove(),2000);
+  }
+
+  /* ========== 引导 ========== */
+  function checkGuide(){
+    if(!(window.matchMedia('(display-mode:standalone)').matches||navigator.standalone)&&!localStorage.getItem('guideClosed')){
+      document.getElementById('installGuide').classList.remove('hidden');
+    }
+  }
+  document.getElementById('closeGuideBtn').addEventListener('click',()=>{
+    document.getElementById('installGuide').classList.add('hidden');localStorage.setItem('guideClosed','1');
+  });
+
+  /* ========== 主循环 ========== */
+  async function safeCheck(){try{await renderApp();}catch(e){} try{await checkReminders();}catch(e){} try{await checkMissed();}catch(e){}}
+  async function init(){
+    try{await openDB();}catch(e){alert('数据库错误');return;}
+    await safeCheck();checkGuide();
+    if('Notification' in window&&Notification.permission==='default') Notification.requestPermission();
+    setInterval(safeCheck,30000);
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')safeCheck();});
+  }
+  init().catch(console.error);
+
+  /* ========== SW ========== */
+  if('serviceWorker' in navigator){
+    window.addEventListener('load',()=>{
+      navigator.serviceWorker.register("data:application/javascript,"+encodeURIComponent("const C='pr-v4';self.addEventListener('fetch',e=>{e.respondWith(fetch(e.request).then(r=>{let c=r.clone();caches.open(C).then(cache=>cache.put(e.request,c));return r;}).catch(()=>caches.match(e.request)));});")).catch(()=>{});
+    });
+  }
+})();
+</script>
 </body>
 </html>
-
-
