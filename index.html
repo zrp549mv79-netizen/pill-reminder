@@ -61,376 +61,503 @@
     .form-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
     .form-row input,.form-row select{flex:1;margin-bottom:0;min-width:80px;}
     .settings-icon{font-size:28px;cursor:pointer;margin-left:auto;}
-    .guide-overlay{
-      position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;
-      display:flex;align-items:center;justify-content:center;
-    }
-    .guide-card{
-      background:#fff;border-radius:28px;padding:32px;text-align:center;
-      max-width:320px;box-shadow:0 20px 40px rgba(0,0,0,0.3);
-    }
-    .guide-highlight{
-      background:#fef9c3; padding:12px; border-radius:16px; margin:16px 0;
-    }
+    .guide-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;}
+    .guide-card{background:#fff;border-radius:28px;padding:32px;text-align:center;max-width:320px;box-shadow:0 20px 40px rgba(0,0,0,0.3);}
+    .guide-highlight{background:#fef9c3;padding:12px;border-radius:16px;margin:16px 0;}
+    .error-toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#dc2626;color:#fff;padding:12px 24px;border-radius:20px;z-index:5000;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,0.2);}
   </style>
 </head>
 <body>
 <div id="app" class="app"></div>
 <button class="fab" id="addBtn">+</button>
+<div id="errorContainer" style="position:fixed;top:0;left:0;right:0;z-index:9999;"></div>
 
 <script>
 (function() {
-  /* ========== 数据库 v4 ========== */
-  const DB_NAME='pillPerfectDB_V4'; let db;
-  async function openDB(){
-    return new Promise((resolve,reject)=>{
-      const req=indexedDB.open(DB_NAME,4);
-      req.onupgradeneeded=(e)=>{
-        const d=e.target.result;
-        if(!d.objectStoreNames.contains('meds')) d.createObjectStore('meds',{keyPath:'id'});
-        if(!d.objectStoreNames.contains('recs')) d.createObjectStore('recs',{keyPath:'key'});
-        if(!d.objectStoreNames.contains('settings')) d.createObjectStore('settings',{keyPath:'key'});
-        if(!d.objectStoreNames.contains('contacts')) d.createObjectStore('contacts',{keyPath:'id'});
+  // 全局错误捕获，避免白屏
+  window.addEventListener('error', function(e) {
+    showError('应用遇到错误，请刷新重试。 (' + e.message + ')');
+  });
+
+  function showError(msg) {
+    const errDiv = document.createElement('div');
+    errDiv.className = 'error-toast';
+    errDiv.textContent = msg;
+    document.body.appendChild(errDiv);
+    setTimeout(() => errDiv.remove(), 5000);
+  }
+
+  // ========== 数据库（名称统一） ==========
+  const DB_NAME = 'pillReminderDB';  // 统一名称
+  const DB_VERSION = 4;
+  let db = null;
+
+  async function openDB() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('meds')) db.createObjectStore('meds', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('recs')) db.createObjectStore('recs', { keyPath: 'key' });
+        if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', { keyPath: 'key' });
+        if (!db.objectStoreNames.contains('contacts')) db.createObjectStore('contacts', { keyPath: 'id' });
       };
-      req.onsuccess=(e)=>{db=e.target.result;resolve(db);};
-      req.onerror=(e)=>reject(e.target.error);
+      request.onsuccess = (e) => {
+        db = e.target.result;
+        resolve(db);
+      };
+      request.onerror = (e) => {
+        reject(new Error('数据库打开失败，请检查浏览器支持或刷新重试。'));
+      };
     });
   }
-  async function dbGet(s,k){try{return new Promise((r,j)=>{const t=db.transaction(s).objectStore(s).get(k);t.onsuccess=()=>r(t.result);t.onerror=j;});}catch(e){return null;}}
-  async function dbGetAll(s){try{return new Promise((r,j)=>{const t=db.transaction(s).objectStore(s).getAll();t.onsuccess=()=>r(t.result);t.onerror=j;});}catch(e){return[];}}
-  async function dbPut(s,i){try{await new Promise((r,j)=>{const t=db.transaction(s,'readwrite').objectStore(s).put(i);t.onsuccess=r;t.onerror=j;});}catch(e){}}
-  async function dbDel(s,k){try{await new Promise((r,j)=>{const t=db.transaction(s,'readwrite').objectStore(s).delete(k);t.onsuccess=r;t.onerror=j;});}catch(e){}}
 
-  /* ========== 工具 ========== */
-  function today(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
-  function nowTime(){const d=new Date();return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;}
-  function compressImg(file,mW=800,q=0.6){
-    return new Promise(r=>{
-      const reader=new FileReader();
-      reader.onload=e=>{
-        const img=new Image();
-        img.onload=()=>{
-          const c=document.createElement('canvas');let w=img.width,h=img.height;
-          if(w>mW){h*=mW/w;w=mW;}
-          c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);
-          r(c.toDataURL('image/jpeg',q));
-        };
-        img.src=e.target.result;
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-  function generateId(){return Date.now().toString(36)+Math.random().toString(36).substr(2,6);}
-
-  /* ========== 数据层 ========== */
-  async function loadMeds(){return await dbGetAll('meds');}
-  async function saveMed(m){await dbPut('meds',m);}
-  async function delMed(id){await dbDel('meds',id);}
-  async function isTaken(medId,time){return !!(await dbGet('recs',`${today()}||${medId}||${time}`));}
-  async function markTaken(medId,time){await dbPut('recs',{key:`${today()}||${medId}||${time}`,taken:true,at:nowTime()});}
-  async function unmarkTaken(medId,time){await dbDel('recs',`${today()}||${medId}||${time}`);}
-  async function getSetting(key,def=''){const v=await dbGet('settings',key);return v?v.value:def;}
-  async function setSetting(key,value){await dbPut('settings',{key,value});}
-
-  /* ========== 音效引擎 ========== */
-  let audioCtx;
-  async function playRingtone(){
-    const custom=await getSetting('ringtone','');
-    if(custom){try{new Audio(custom).play();}catch(e){playBuiltIn();}}
-    else playBuiltIn();
-  }
-  function playBuiltIn(){
-    try{
-      if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-      if(audioCtx.state==='suspended')audioCtx.resume();
-      const now=audioCtx.currentTime;
-      [523.25,659.25,783.99,1046.5].forEach((f,i)=>{
-        const o=audioCtx.createOscillator(),g=audioCtx.createGain();
-        o.type=i===3?'triangle':'sine';o.frequency.value=f;
-        g.gain.setValueAtTime(0.3,now+i*0.25);g.gain.exponentialRampToValueAtTime(0.001,now+i*0.25+0.4);
-        o.connect(g);g.connect(audioCtx.destination);o.start(now+i*0.25);o.stop(now+i*0.25+0.45);
+  async function dbGet(store, key) {
+    if (!db) return null;
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(store, 'readonly');
+        const req = tx.objectStore(store).get(key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
       });
-    }catch(e){}
-  }
-  let sirenInt;
-  function startSiren(){if(sirenInt)return;playRingtone();sirenInt=setInterval(playRingtone,3000);}
-  function stopSiren(){if(sirenInt){clearInterval(sirenInt);sirenInt=null;}}
-
-  function sendSMS(medName,time,type){
-    window.open(`sms:?body=${encodeURIComponent(`提醒：家人漏服【${medName}】(${time})，${type==='injection'?'注射':'口服'}，请提醒。`)}`,'_blank');
+    } catch (e) { return null; }
   }
 
-  let meds=[], curRem=null, alertOn=false, missedTimers={};
-
-  /* ========== 重复检查 ========== */
-  function shouldRemindToday(med){
-    if(!med.repeat||med.repeat==='none') return true;
-    const now=new Date();
-    if(med.repeat==='daily') return true;
-    if(med.repeat==='weekly'&&med.weekDays) return med.weekDays.includes(now.getDay());
-    return false;
+  async function dbGetAll(store) {
+    if (!db) return [];
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(store, 'readonly');
+        const req = tx.objectStore(store).getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    } catch (e) { return []; }
   }
 
-  /* ========== 首次引导 ========== */
-  async function checkFirstRun(){
-    const guided=await getSetting('guided','false');
-    if(guided==='true') return;
-    const guide=document.createElement('div'); guide.className='guide-overlay';
-    guide.innerHTML=`
-      <div class="guide-card">
-        <h2>👋 欢迎使用用药提醒</h2>
-        <p>拍照加药，到点手机会响铃提醒。</p>
-        <div class="guide-highlight">👉 点右下角 <strong>+</strong> 开始添加</div>
-        <button class="btn" id="closeGuide">知道了，开始用</button>
-      </div>`;
-    document.body.appendChild(guide);
-    document.getElementById('closeGuide').onclick=async()=>{
-      guide.remove(); await setSetting('guided','true');
-      // 请求通知权限
-      if('Notification' in window && Notification.permission==='default') Notification.requestPermission();
+  async function dbPut(store, item) {
+    if (!db) return;
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(store, 'readwrite');
+        const req = tx.objectStore(store).put(item);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    } catch (e) {}
+  }
+
+  async function dbDel(store, key) {
+    if (!db) return;
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(store, 'readwrite');
+        const req = tx.objectStore(store).delete(key);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    } catch (e) {}
+  }
+/* ========== 工具函数 ========== */
+function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function nowTime() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function compressImg(file, maxW = 800, quality = 0.6) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let w = img.width, h = img.height;
+        if (w > maxW) { h *= maxW / w; w = maxW; }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = e.target.result;
     };
-  }
+    reader.readAsDataURL(file);
+  });
+}
 
-  /* ========== 渲染 ========== */
-  async function renderApp(){
-    try{meds=await loadMeds();}catch(e){}
-    const stats=await calcStats();
-    const nickname=await getSetting('nickname','您');
-    document.getElementById('app').innerHTML=`
-      <div class="card header" onclick="showSettings()">
-        <span class="header-icon">💊</span>
-        <div style="flex:1;"><div class="header-title">${esc(nickname)}的用药提醒</div><div style="color:var(--text2);">${today()} ${nowTime()}</div></div>
-        <span class="settings-icon">⚙️</span>
-      </div>
-      <div class="stats">
-        <div class="stat"><div class="stat-num" style="color:#16a34a;">${stats.taken}</div><div class="stat-label">已服用</div></div>
-        <div class="stat"><div class="stat-num" style="color:var(--prim);">${stats.remaining}</div><div class="stat-label">待服用</div></div>
-        <div class="stat"><div class="stat-num" style="color:#dc2626;">${stats.missed}</div><div class="stat-label">已错过</div></div>
-      </div>
-      <div class="card">
-        <h2 style="font-size:20px;margin-bottom:12px;">📋 我的药物</h2>
-        ${await renderMedList()}
-      </div>
-    `;
-    document.title=stats.remaining?`(${stats.remaining}) 吃药提醒`:'用药提醒';
-  }
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+}
 
-  async function renderMedList(){
-    if(!meds.length) return '<div style="text-align:center;color:#94a3b8;padding:32px;">还没有药，点右下角 + 添加</div>';
-    let h='';
-    for(const m of meds){
-      const typeBadge=m.type==='injection'?'💉 注射':'💊 口服';
-      const imgHtml=m.image?`<img src="${m.image}" class="img-thumb" alt="药盒照片">`:'';
-      let done=0; for(const t of m.times) if(await isTaken(m.id,t)) done++;
-      const percent=m.times.length?Math.round((done/m.times.length)*100):0;
-      let timesH='';
-      for(const t of m.times){
-        const taken=await isTaken(m.id,t);
-        const cls=taken?'taken':(t<=nowTime()?'missed':'pending');
-        const icon=taken?'✅':(t<=nowTime()?'⚠️':'⏰');
-        timesH+=`<span class="time-chip ${cls}" onclick="toggleTake('${m.id}','${t}')">${icon} ${t}</span>`;
+/* ========== 数据操作 ========== */
+let meds = [];
+async function loadMeds() { meds = await dbGetAll('meds'); return meds; }
+async function saveMed(m) { await dbPut('meds', m); }
+async function delMed(id) { await dbDel('meds', id); }
+async function isTaken(medId, time) {
+  return !!(await dbGet('recs', `${today()}||${medId}||${time}`));
+}
+async function markTaken(medId, time) {
+  await dbPut('recs', { key: `${today()}||${medId}||${time}`, taken: true, at: nowTime() });
+}
+async function unmarkTaken(medId, time) {
+  await dbDel('recs', `${today()}||${medId}||${time}`);
+}
+async function getSetting(key, def = '') {
+  const v = await dbGet('settings', key);
+  return v ? v.value : def;
+}
+async function setSetting(key, value) {
+  await dbPut('settings', { key, value });
+}
+
+/* ========== 音效引擎 ========== */
+let audioCtx;
+async function playRingtone() {
+  const custom = await getSetting('ringtone', '');
+  if (custom) {
+    try { new Audio(custom).play(); } catch (e) { playBuiltIn(); }
+  } else {
+    playBuiltIn();
+  }
+}
+function playBuiltIn() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const now = audioCtx.currentTime;
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = i === 3 ? 'triangle' : 'sine';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.3, now + i * 0.25);
+      g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.25 + 0.4);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(now + i * 0.25); o.stop(now + i * 0.25 + 0.45);
+    });
+  } catch (e) {}
+}
+let sirenInt;
+function startSiren() {
+  if (sirenInt) return;
+  playRingtone();
+  sirenInt = setInterval(playRingtone, 3000);
+}
+function stopSiren() {
+  if (sirenInt) { clearInterval(sirenInt); sirenInt = null; }
+}
+
+function sendSMS(medName, time, type) {
+  window.open(`sms:?body=${encodeURIComponent(
+    `提醒：家人漏服【${medName}】(${time})，${type==='injection'?'注射':'口服'}，请提醒。`
+  )}`, '_blank');
+}
+
+/* ========== 状态变量 ========== */
+let curRem = null, alertOn = false, missedTimers = {};
+
+function shouldRemindToday(med) {
+  if (!med.repeat || med.repeat === 'none') return true;
+  if (med.repeat === 'daily') return true;
+  if (med.repeat === 'weekly' && med.weekDays) {
+    return med.weekDays.includes(new Date().getDay());
+  }
+  return false;
+}
+/* ========== 渲染 ========== */
+async function renderApp() {
+  try { meds = await loadMeds(); } catch (e) { meds = []; }
+  const stats = await calcStats();
+  const nickname = await getSetting('nickname', '您');
+  document.getElementById('app').innerHTML = `
+    <div class="card header" onclick="showSettings()">
+      <span class="header-icon">💊</span>
+      <div style="flex:1;"><div class="header-title">${esc(nickname)}的用药提醒</div><div style="color:var(--text2);">${today()} ${nowTime()}</div></div>
+      <span class="settings-icon">⚙️</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="stat-num" style="color:#16a34a;">${stats.taken}</div><div class="stat-label">已服用</div></div>
+      <div class="stat"><div class="stat-num" style="color:var(--prim);">${stats.remaining}</div><div class="stat-label">待服用</div></div>
+      <div class="stat"><div class="stat-num" style="color:#dc2626;">${stats.missed}</div><div class="stat-label">已错过</div></div>
+    </div>
+    <div class="card">
+      <h2 style="font-size:20px;margin-bottom:12px;">📋 我的药物</h2>
+      ${await renderMedList()}
+    </div>
+  `;
+  document.title = stats.remaining ? `(${stats.remaining}) 吃药提醒` : '用药提醒';
+}
+
+async function renderMedList() {
+  if (!meds.length) return '<div style="text-align:center;color:#94a3b8;padding:32px;">还没有药，点右下角 + 添加</div>';
+  let html = '';
+  for (const m of meds) {
+    const typeBadge = m.type === 'injection' ? '💉 注射' : '💊 口服';
+    const imgHtml = m.image ? `<img src="${m.image}" class="img-thumb" alt="药盒照片">` : '';
+    let done = 0;
+    for (const t of m.times) { if (await isTaken(m.id, t)) done++; }
+    const percent = m.times.length ? Math.round((done / m.times.length) * 100) : 0;
+    let timesHtml = '';
+    for (const t of m.times) {
+      const taken = await isTaken(m.id, t);
+      const cls = taken ? 'taken' : (t <= nowTime() ? 'missed' : 'pending');
+      const icon = taken ? '✅' : (t <= nowTime() ? '⚠️' : '⏰');
+      timesHtml += `<span class="time-chip ${cls}" onclick="toggleTake('${m.id}','${t}')">${icon} ${t}</span>`;
+    }
+    const repeatLabel = !m.repeat || m.repeat === 'none' ? '' : (m.repeat === 'daily' ? ' · 每天' : ' · 每周');
+    html += `<div class="med-item">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">${imgHtml}
+        <div style="flex:1;"><span class="med-name">${esc(m.name)}</span> <span style="background:#e2e8f0;padding:2px 10px;border-radius:12px;font-size:14px;">${typeBadge}</span> ${m.dosage ? `<span style="font-size:16px;">· ${esc(m.dosage)}</span>` : ''} <span style="font-size:13px;color:var(--text2);">${repeatLabel}</span></div>
+        <button onclick="editMed('${m.id}')" style="background:none;border:none;font-size:20px;">✏️</button>
+        <button onclick="delMed('${m.id}')" style="background:none;border:none;color:#dc2626;font-size:20px;">🗑️</button>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${percent}%;"></div></div>
+      <div class="times">${timesHtml}</div>
+    </div>`;
+  }
+  return html;
+}
+
+async function calcStats() {
+  let taken = 0, missed = 0, remaining = 0;
+  const now = nowTime();
+  for (const m of meds) {
+    if (!shouldRemindToday(m)) continue;
+    for (const t of m.times) {
+      try {
+        if (await isTaken(m.id, t)) taken++;
+        else if (t <= now) missed++;
+        else remaining++;
+      } catch (e) {}
+    }
+  }
+  return { taken, missed, remaining, total: taken + missed + remaining };
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// 全局点击事件
+window.toggleTake = async (medId, time) => {
+  try {
+    if (await isTaken(medId, time)) await unmarkTaken(medId, time);
+    else {
+      await markTaken(medId, time);
+      if (curRem) {
+        const all = await Promise.all(curRem.items.map(i => isTaken(i.medId, i.time)));
+        if (all.every(v => v)) closeRem();
       }
-      const repeatLabel = !m.repeat||m.repeat==='none' ? '' : (m.repeat==='daily' ? ' · 每天' : ' · 每周');
-      h+=`<div class="med-item">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">${imgHtml}
-          <div style="flex:1;"><span class="med-name">${esc(m.name)}</span> <span style="background:#e2e8f0;padding:2px 10px;border-radius:12px;font-size:14px;">${typeBadge}</span> ${m.dosage?`<span style="font-size:16px;">· ${esc(m.dosage)}</span>`:''} <span style="font-size:13px;color:var(--text2);">${repeatLabel}</span></div>
-          <button onclick="editMed('${m.id}')" style="background:none;border:none;font-size:20px;">✏️</button>
-          <button onclick="delMed('${m.id}')" style="background:none;border:none;color:#dc2626;font-size:20px;">🗑️</button>
-        </div>
-        <div class="progress-bar"><div class="progress-fill" style="width:${percent}%;"></div></div>
-        <div class="times">${timesH}</div>
-      </div>`;
     }
-    return h;
-  }
+  } catch (e) {}
+  renderApp();
+};
 
-  async function calcStats(){
-    let taken=0,missed=0,remaining=0;
-    const now=nowTime();
-    for(const m of meds) for(const t of m.times){
-      if(!shouldRemindToday(m)) continue;
-      if(await isTaken(m.id,t)) taken++; else if(t<=now) missed++; else remaining++;
-    }
-    return {taken,missed,remaining,total:taken+missed+remaining};
-  }
+window.editMed = (id) => {
+  const m = meds.find(x => x.id === id);
+  if (m) openMedModal(m);
+};
 
-  function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+window.delMed = async (id) => {
+  if (confirm('删除这个药？')) { await delMed(id); renderApp(); }
+};
+// 添加/编辑药物弹窗
+function openMedModal(edit = null) {
+  const modal = document.createElement('div'); modal.className = 'modal';
+  const name = edit?.name || '', dosage = edit?.dosage || '', type = edit?.type || 'pill';
+  const times = edit?.times || ['08:00'], img = edit?.image || '';
+  const repeat = edit?.repeat || 'none', weekDays = edit?.weekDays || [];
+  modal.innerHTML = `
+    <div class="modal-content"><h2>${edit ? '编辑' : '添加'}药物</h2>
+      <input id="mn" placeholder="名称" value="${esc(name)}">
+      <input id="md" placeholder="剂量（1片/半粒/10ml）" value="${esc(dosage)}">
+      <select id="mt"><option value="pill" ${type==='pill'?'selected':''}>💊 口服</option><option value="injection" ${type==='injection'?'selected':''}>💉 注射</option></select>
+      <div style="margin-bottom:8px;"><label>⏰ 提醒时间</label></div>
+      <div id="tc">${times.map(t => `<div class="form-row"><input type="time" value="${t}" class="ti"><button onclick="this.parentElement.remove()" style="width:auto;">✕</button></div>`).join('')}</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <input type="text" id="quickTimes" placeholder="如: 08:00, 12:00, 20:00" style="flex:1;">
+        <button onclick="addQuickTimes()" style="width:auto;">一键生成</button>
+      </div>
+      <button onclick="document.getElementById('tc').insertAdjacentHTML('beforeend','<div class=form-row><input type=time value=12:00 class=ti><button onclick=this.parentElement.remove() style=width:auto>✕</button></div>')" style="width:auto;margin-bottom:12px;">+ 单个时间</button>
+      <div style="margin:12px 0;">
+        <label>🔄 重复</label>
+        <select id="repeatSelect" onchange="toggleWeekDays()">
+          <option value="none" ${repeat==='none'?'selected':''}>不重复（仅今天）</option>
+          <option value="daily" ${repeat==='daily'?'selected':''}>每天</option>
+          <option value="weekly" ${repeat==='weekly'?'selected':''}>每周（多选星期）</option>
+        </select>
+      </div>
+      <div id="weekDaysGroup" style="display:${repeat==='weekly'?'flex':'none'};flex-wrap:wrap;gap:8px;">
+        ${['日','一','二','三','四','五','六'].map((w,i) => `<label style="display:flex;align-items:center;gap:4px;font-size:16px;"><input type="checkbox" value="${i}" ${weekDays.includes(i)?'checked':''} class="wd"> ${w}</label>`).join('')}
+      </div>
+      <div style="margin:12px 0;"><label>📷 拍药品照片</label><input type="file" id="mi" accept="image/*" capture="environment"></div>
+      ${img ? `<img src="${img}" style="width:80px;border-radius:14px;margin-top:6px;">` : ''}
+      <div style="display:flex;gap:12px;margin-top:16px;"><button class="btn" id="sv">保存</button><button class="btn-outline btn" onclick="this.closest('.modal').remove()">取消</button></div>
+    </div>`;
+  document.body.appendChild(modal);
 
-  /* ========== 操作 ========== */
-  window.toggleTake=async(medId,time)=>{
-    if(await isTaken(medId,time)) await unmarkTaken(medId,time);
-    else{await markTaken(medId,time); if(curRem){const all=await Promise.all(curRem.items.map(i=>isTaken(i.medId,i.time))); if(all.every(v=>v)) closeRem();}}
-    renderApp();
+  window.toggleWeekDays = () => {
+    document.getElementById('weekDaysGroup').style.display =
+      document.getElementById('repeatSelect').value === 'weekly' ? 'flex' : 'none';
   };
-  window.editMed=(id)=>{const m=meds.find(x=>x.id===id);if(m)openMedModal(m);};
-  window.delMed=async(id)=>{if(confirm('删除这个药？')){await delMed(id);renderApp();}};
 
-  /* ========== 添加/编辑弹窗（支持快捷时间输入） ========== */
-  function openMedModal(edit=null){
-    const modal=document.createElement('div');modal.className='modal';
-    const name=edit?.name||'', dosage=edit?.dosage||'', type=edit?.type||'pill';
-    const times=edit?.times||['08:00'], img=edit?.image||'';
-    const repeat=edit?.repeat||'none', weekDays=edit?.weekDays||[];
-    modal.innerHTML=`
-      <div class="modal-content"><h2>${edit?'编辑':'添加'}药物</h2>
-        <input id="mn" placeholder="名称" value="${esc(name)}">
-        <input id="md" placeholder="剂量（1片/半粒/10ml）" value="${esc(dosage)}">
-        <select id="mt"><option value="pill" ${type==='pill'?'selected':''}>💊 口服</option><option value="injection" ${type==='injection'?'selected':''}>💉 注射</option></select>
-        <div style="margin-bottom:8px;"><label>⏰ 提醒时间</label></div>
-        <div id="tc">${times.map(t=>`<div class="form-row"><input type="time" value="${t}" class="ti"><button onclick="this.parentElement.remove()" style="width:auto;">✕</button></div>`).join('')}</div>
-        <div style="display:flex;gap:8px;margin-bottom:12px;">
-          <input type="text" id="quickTimes" placeholder="如: 08:00, 12:00, 20:00" style="flex:1;">
-          <button onclick="addQuickTimes()" style="width:auto;white-space:nowrap;">一键生成</button>
-        </div>
-        <button onclick="document.getElementById('tc').insertAdjacentHTML('beforeend','<div class=form-row><input type=time value=12:00 class=ti><button onclick=this.parentElement.remove() style=width:auto>✕</button></div>')" style="width:auto;margin-bottom:12px;">+ 添加单个时间</button>
-        <div style="margin:12px 0;">
-          <label>🔄 重复</label>
-          <select id="repeatSelect" onchange="toggleWeekDays()">
-            <option value="none" ${repeat==='none'?'selected':''}>不重复（仅今天）</option>
-            <option value="daily" ${repeat==='daily'?'selected':''}>每天</option>
-            <option value="weekly" ${repeat==='weekly'?'selected':''}>每周（可选多个星期）</option>
-          </select>
-        </div>
-        <div id="weekDaysGroup" style="display:${repeat==='weekly'?'flex':'none'};flex-wrap:wrap;gap:8px;">
-          ${['日','一','二','三','四','五','六'].map((w,i)=>`<label style="display:flex;align-items:center;gap:4px;font-size:16px;"><input type="checkbox" value="${i}" ${weekDays.includes(i)?'checked':''} class="wd"> ${w}</label>`).join('')}
-        </div>
-        <div style="margin:12px 0;"><label>📷 拍药品照片</label><input type="file" id="mi" accept="image/*" capture="environment"></div>
-        ${img?`<img src="${img}" style="width:80px;border-radius:14px;margin-top:6px;">`:''}
-        <div style="display:flex;gap:12px;margin-top:16px;"><button class="btn" id="sv">保存</button><button class="btn-outline btn" onclick="this.closest('.modal').remove()">取消</button></div>
-      </div>`;
-    document.body.appendChild(modal);
-    window.toggleWeekDays=()=>{
-      document.getElementById('weekDaysGroup').style.display=document.getElementById('repeatSelect').value==='weekly'?'flex':'none';
-    };
-    window.addQuickTimes=()=>{
-      const input=document.getElementById('quickTimes');
-      if(!input)return;
-      const raw=input.value;
-      const times=raw.split(/[,，\\s]+/).filter(t=>/^\\d{1,2}:\\d{2}$/.test(t.trim()));
-      if(times.length===0){alert('请按格式输入，如 08:00, 12:00');return;}
-      const container=document.getElementById('tc');
-      container.innerHTML='';
-      times.forEach(t=>{
-        const div=document.createElement('div');div.className='form-row';
-        div.innerHTML=`<input type="time" value="${t.trim()}" class="ti"><button onclick="this.parentElement.remove()" style="width:auto;">✕</button>`;
-        container.appendChild(div);
-      });
-    };
-    modal.querySelector('#sv').onclick=async()=>{
-      const n=modal.querySelector('#mn').value.trim(); if(!n){alert('请写名称');return;}
-      const timesV=[...modal.querySelectorAll('.ti')].map(i=>i.value).filter(t=>t);
-      if(!timesV.length){alert('至少一个时间');return;}
-      const file=modal.querySelector('#mi').files[0]; let imgData=img; if(file) imgData=await compressImg(file);
-      const repeatVal=modal.querySelector('#repeatSelect').value;
-      const weekDaysArr = repeatVal==='weekly' ? [...modal.querySelectorAll('.wd:checked')].map(cb=>parseInt(cb.value)) : [];
-      await saveMed({
-        id:edit?.id||generateId(), name:n,
-        dosage:modal.querySelector('#md').value.trim(),
-        type:modal.querySelector('#mt').value,
-        times:timesV.sort(),
-        image:imgData,
-        repeat:repeatVal,
-        weekDays:weekDaysArr,
-        enabled:true
-      });
-      modal.remove();renderApp();
-    };
-    modal.addEventListener('click',e=>{if(e.target===modal)modal.remove();});
-  }
-  document.getElementById('addBtn').onclick=()=>openMedModal();
+  window.addQuickTimes = () => {
+    const input = document.getElementById('quickTimes');
+    if (!input) return;
+    const raw = input.value;
+    const times = raw.split(/[,，\\s]+/).filter(t => /^\\d{1,2}:\\d{2}$/.test(t.trim()));
+    if (times.length === 0) { alert('请按格式输入，如 08:00, 12:00'); return; }
+    const container = document.getElementById('tc');
+    container.innerHTML = '';
+    times.forEach(t => {
+      const div = document.createElement('div'); div.className = 'form-row';
+      div.innerHTML = `<input type="time" value="${t.trim()}" class="ti"><button onclick="this.parentElement.remove()" style="width:auto;">✕</button>`;
+      container.appendChild(div);
+    });
+  };
 
-  /* ========== 提醒逻辑（合并同时段） ========== */
-  async function checkReminders(){
-    if(curRem)return;
-    const now=nowTime();
-    const grouped={};
-    for(const m of meds){
-      if(!m.enabled) continue;
-      if(!shouldRemindToday(m)) continue;
-      for(const t of m.times){
-        if(t===now && !(await isTaken(m.id,t))){
-          if(!grouped[t]) grouped[t]=[];
-          grouped[t].push({medId:m.id,time:t,medName:m.name,dosage:m.dosage,image:m.image,type:m.type});
-        }
+  modal.querySelector('#sv').onclick = async () => {
+    const n = modal.querySelector('#mn').value.trim();
+    if (!n) { alert('请写名称'); return; }
+    const timeVals = [...modal.querySelectorAll('.ti')].map(i => i.value).filter(t => t);
+    if (!timeVals.length) { alert('至少一个时间'); return; }
+    const file = modal.querySelector('#mi').files[0];
+    let imgData = img;
+    if (file) imgData = await compressImg(file);
+    const repeatVal = modal.querySelector('#repeatSelect').value;
+    const weekDaysArr = repeatVal === 'weekly' ? [...modal.querySelectorAll('.wd:checked')].map(cb => parseInt(cb.value)) : [];
+    await saveMed({
+      id: edit?.id || generateId(),
+      name: n,
+      dosage: modal.querySelector('#md').value.trim(),
+      type: modal.querySelector('#mt').value,
+      times: timeVals.sort(),
+      image: imgData,
+      repeat: repeatVal,
+      weekDays: weekDaysArr,
+      enabled: true
+    });
+    modal.remove(); renderApp();
+  };
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+document.getElementById('addBtn').onclick = () => openMedModal();
+
+/* ========== 提醒逻辑 ========== */
+async function checkReminders() {
+  if (curRem) return;
+  const now = nowTime();
+  const grouped = {};
+  for (const m of meds) {
+    if (!m.enabled) continue;
+    if (!shouldRemindToday(m)) continue;
+    for (const t of m.times) {
+      if (t === now && !(await isTaken(m.id, t))) {
+        if (!grouped[t]) grouped[t] = [];
+        grouped[t].push({ medId: m.id, time: t, medName: m.name, dosage: m.dosage, image: m.image, type: m.type });
       }
     }
-    const times=Object.keys(grouped);
-    if(times.length>0) showReminder(grouped[times[0]], times[0]);
   }
+  const times = Object.keys(grouped);
+  if (times.length > 0) showReminder(grouped[times[0]], times[0]);
+}
 
-  function showReminder(items, time){
-    if(curRem)closeRem();
-    const overlay=document.createElement('div');overlay.className='reminder-overlay';
-    getSetting('nickname','您').then(nickname=>{
-      overlay.innerHTML=`
-        <div class="reminder-box">
-          <div style="font-size:24px;font-weight:700;">${nickname}，该吃药了</div>
-          <div style="color:var(--text2);margin:4px 0 16px;">${time}</div>
-          ${items.map((it,idx)=>`
-            <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #eee;">
-              ${it.image?`<img src="${it.image}" style="width:56px;height:56px;border-radius:16px;object-fit:cover;" alt="药品">`:''}
-              <div style="flex:1;"><strong>${esc(it.medName)}</strong><br><span style="color:var(--text2);">${it.type==='injection'?'💉 注射':'💊 口服'} · ${esc(it.dosage||'')}</span></div>
-              <input type="checkbox" class="rem-check" data-idx="${idx}">
-            </div>`).join('')}
-          <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
-            <select id="sm" style="width:auto;"><option value="5">5分钟后</option><option value="10">10分钟后</option><option value="15">15分钟后</option></select>
-            <button class="btn-outline btn" id="sb" style="width:auto;">稍后提醒</button>
-          </div>
-          <button class="btn" id="cb" disabled style="width:100%;margin-top:12px;">全部吃完</button>
-        </div>`;
-      document.body.appendChild(overlay);
-      const cbs=overlay.querySelectorAll('.rem-check');
-      const cbBtn=overlay.querySelector('#cb');
-      cbs.forEach(cb=>cb.addEventListener('change',()=>{cbBtn.disabled=![...cbs].every(c=>c.checked);}));
-      cbBtn.onclick=async()=>{
-        for(const it of items) await markTaken(it.medId,it.time);
-        if(missedTimers[time]){clearTimeout(missedTimers[time]); delete missedTimers[time];}
-        closeRem();renderApp();
-      };
-      overlay.querySelector('#sb').onclick=()=>{
-        const mins=parseInt(overlay.querySelector('#sm').value); closeRem();
-        setTimeout(async()=>{
-          const still=[]; for(const it of items){if(!(await isTaken(it.medId,it.time)))still.push(it);}
-          if(still.length) showReminder(still, time);
-        }, mins*60000);
-      };
-      curRem={overlay,items};
-      playRingtone(); if(navigator.vibrate)navigator.vibrate([300,100,300]);
-      missedTimers[time]=setTimeout(async()=>{
-        const stillMissed=[]; for(const it of items){if(!(await isTaken(it.medId,it.time)))stillMissed.push(it);}
-        if(stillMissed.length>0) sendSMS(stillMissed[0].medName, stillMissed[0].time, stillMissed[0].type);
-      },5*60*1000);
-    });
-  }
-  function closeRem(){if(curRem){curRem.overlay.remove();curRem=null;}}
+function showReminder(items, time) {
+  if (curRem) closeRem();
+  const overlay = document.createElement('div'); overlay.className = 'reminder-overlay';
+  getSetting('nickname', '您').then(nickname => {
+    overlay.innerHTML = `
+      <div class="reminder-box">
+        <div style="font-size:24px;font-weight:700;">${nickname}，该吃药了</div>
+        <div style="color:var(--text2);margin:4px 0 16px;">${time}</div>
+        ${items.map((it, idx) => `
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #eee;">
+            ${it.image ? `<img src="${it.image}" style="width:56px;height:56px;border-radius:16px;object-fit:cover;" alt="药品">` : ''}
+            <div style="flex:1;"><strong>${esc(it.medName)}</strong><br><span style="color:var(--text2);">${it.type==='injection'?'💉 注射':'💊 口服'} · ${esc(it.dosage||'')}</span></div>
+            <input type="checkbox" class="rem-check" data-idx="${idx}">
+          </div>`).join('')}
+        <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
+          <select id="sm" style="width:auto;"><option value="5">5分钟后</option><option value="10">10分钟后</option><option value="15">15分钟后</option></select>
+          <button class="btn-outline btn" id="sb" style="width:auto;">稍后提醒</button>
+        </div>
+        <button class="btn" id="cb" disabled style="width:100%;margin-top:12px;">全部吃完</button>
+      </div>`;
+    document.body.appendChild(overlay);
+    const cbs = overlay.querySelectorAll('.rem-check');
+    const cbBtn = overlay.querySelector('#cb');
+    cbs.forEach(cb => cb.addEventListener('change', () => {
+      cbBtn.disabled = ![...cbs].every(c => c.checked);
+    }));
+    cbBtn.onclick = async () => {
+      for (const it of items) await markTaken(it.medId, it.time);
+      if (missedTimers[time]) { clearTimeout(missedTimers[time]); delete missedTimers[time]; }
+      closeRem(); renderApp();
+    };
+    overlay.querySelector('#sb').onclick = () => {
+      const mins = parseInt(overlay.querySelector('#sm').value);
+      closeRem();
+      setTimeout(async () => {
+        const still = [];
+        for (const it of items) { if (!(await isTaken(it.medId, it.time))) still.push(it); }
+        if (still.length) showReminder(still, time);
+      }, mins * 60000);
+    };
+    curRem = { overlay, items };
+    playRingtone();
+    if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
+    missedTimers[time] = setTimeout(async () => {
+      const stillMissed = [];
+      for (const it of items) { if (!(await isTaken(it.medId, it.time))) stillMissed.push(it); }
+      if (stillMissed.length > 0) sendSMS(stillMissed[0].medName, stillMissed[0].time, stillMissed[0].type);
+    }, 5 * 60 * 1000);
+  });
+}
 
-  async function checkMissed(){
-    if(alertOn)return;
-    const now=nowTime();
-    for(const m of meds){if(!m.enabled||!shouldRemindToday(m))continue; for(const t of m.times){if(t<now&&!(await isTaken(m.id,t))){
-      const key=`alert_${m.id}_${t}`; if(sessionStorage.getItem(key))continue; sessionStorage.setItem(key,'1');
-      triggerAlert(m,t); return;
-    }}}
-  }
-  function triggerAlert(med,time){
-    alertOn=true; startSiren(); if(navigator.vibrate)navigator.vibrate([500,200,500,200]);
-    const div=document.createElement('div');div.className='alert-siren';
-    div.innerHTML=`<h2>⚠️ 忘记吃药</h2><p style="font-size:24px;">${esc(med.name)}</p><p style="font-size:20px;">${time} · ${med.type==='injection'?'💉':'💊'}</p><button onclick="dismissAlert()">我知道了</button>`;
-    document.body.appendChild(div);
-  }
-  window.dismissAlert=()=>{alertOn=false;stopSiren();document.querySelector('.alert-siren')?.remove();renderApp();};
+function closeRem() { if (curRem) { curRem.overlay.remove(); curRem = null; } }
 
-  /* ========== 设置（夜间、导出、历史、日历） ========== */
-  window.showSettings=async()=>{
-    const modal=document.createElement('div');modal.className='modal';
-    const nickname=await getSetting('nickname','');
-    const ringtone=await getSetting('ringtone','');
-    const nightMode=await getSetting('nightMode','false')==='true';
-    modal.innerHTML=`
+async function checkMissed() {
+  if (alertOn) return;
+  const now = nowTime();
+  for (const m of meds) {
+    if (!m.enabled || !shouldRemindToday(m)) continue;
+    for (const t of m.times) {
+      if (t < now && !(await isTaken(m.id, t))) {
+        const key = `alert_${m.id}_${t}`;
+        if (sessionStorage.getItem(key)) continue;
+        sessionStorage.setItem(key, '1');
+        triggerAlert(m, t);
+        return;
+      }
+    }
+  }
+}
+
+function triggerAlert(med, time) {
+  alertOn = true; startSiren();
+  if (navigator.vibrate) navigator.vibrate([500, 200, 500, 200]);
+  const div = document.createElement('div'); div.className = 'alert-siren';
+  div.innerHTML = `<h2>⚠️ 忘记吃药</h2><p style="font-size:24px;">${esc(med.name)}</p><p style="font-size:20px;">${time} · ${med.type==='injection'?'💉':'💊'}</p><button onclick="dismissAlert()">我知道了</button>`;
+  document.body.appendChild(div);
+}
+
+window.dismissAlert = () => {
+  alertOn = false; stopSiren();
+  document.querySelector('.alert-siren')?.remove(); renderApp();
+};
+  /* ========== 设置、历史、导入导出、夜间模式 ========== */
+  window.showSettings = async () => {
+    const modal = document.createElement('div'); modal.className = 'modal';
+    const nickname = await getSetting('nickname', '');
+    const ringtone = await getSetting('ringtone', '');
+    const nightMode = await getSetting('nightMode', 'false') === 'true';
+    modal.innerHTML = `
       <div class="modal-content"><h2>⚙️ 设置</h2>
         <label>怎么称呼您？</label><input id="nickname" value="${esc(nickname)}" placeholder="如：奶奶">
         <label>自定义铃声</label><input type="file" id="ringFile" accept="audio/*">
-        ${ringtone?`<audio controls src="${ringtone}" style="width:100%;margin:4px 0;"></audio><button onclick="clearRing()" class="btn-outline btn">恢复默认铃声</button>`:'<div style="color:var(--text2);">当前：默认和弦</div>'}
+        ${ringtone ? `<audio controls src="${ringtone}" style="width:100%;margin:4px 0;"></audio><button onclick="clearRing()" class="btn-outline btn">恢复默认铃声</button>` : '<div style="color:var(--text2);">当前：默认和弦</div>'}
         <div style="margin:12px 0;display:flex;align-items:center;gap:8px;">
           <span>夜间模式</span>
           <input type="checkbox" id="nightToggle" ${nightMode?'checked':''} style="width:auto;">
@@ -444,105 +571,155 @@
           <input type="file" id="importFile" accept=".json" style="display:none;" onchange="importData(event)">
         </div>
         <div style="margin-top:16px; padding:12px; background:#fef9c3; border-radius:16px; color:#000;">
-          <strong>📅 苹果手机用户必点</strong>
-          <p style="font-size:14px;">下载日历文件并添加，以后关掉App也能响铃。</p>
+          <strong>📅 苹果手机必点</strong>
+          <p>下载日历文件并添加，关掉App也能响铃。</p>
           <button class="btn" onclick="exportCalendar()" style="margin-top:8px;">下载日历提醒</button>
         </div>
         <button class="btn-outline btn" style="margin-top:16px;" onclick="this.closest('.modal').remove()">关闭</button>
       </div>`;
     document.body.appendChild(modal);
-    modal.querySelector('#nickname').onchange=async e=>{await setSetting('nickname',e.target.value);};
-    modal.querySelector('#ringFile').onchange=async e=>{
-      const file=e.target.files[0]; if(!file)return;
-      const reader=new FileReader();
-      reader.onload=async ev=>{await setSetting('ringtone',ev.target.result);};
+    modal.querySelector('#nickname').onchange = async e => await setSetting('nickname', e.target.value);
+    modal.querySelector('#ringFile').onchange = async e => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async ev => await setSetting('ringtone', ev.target.result);
       reader.readAsDataURL(file);
     };
-    modal.querySelector('#nightToggle').onchange=async e=>{
-      await setSetting('nightMode',e.target.checked?'true':'false');
-      document.body.classList.toggle('night',e.target.checked);
+    modal.querySelector('#nightToggle').onchange = async e => {
+      await setSetting('nightMode', e.target.checked ? 'true' : 'false');
+      document.body.classList.toggle('night', e.target.checked);
     };
-    modal.addEventListener('click',e=>{if(e.target===modal)modal.remove();});
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   };
-  window.clearRing=async()=>{await dbDel('settings','ringtone');renderApp();};
 
-  window.showHistory=async()=>{
-    const allRecs=await dbGetAll('recs');
-    const sorted=allRecs.sort((a,b)=>b.key.localeCompare(a.key)).slice(0,100);
-    let html='<div class="modal"><div class="modal-content"><h2>📅 服药历史</h2>';
-    if(!sorted.length) html+='<div style="padding:20px;color:var(--text2);">暂无记录</div>';
-    else sorted.forEach(r=>{
-      const [date,medId,time]=r.key.split('||');
-      const med=meds.find(m=>m.id===medId);
-      const name=med?med.name:medId;
-      html+=`<div style="padding:8px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;"><span>${date} ${time}</span><span>${name} ${r.taken?'✅':'❌'}</span></div>`;
+  window.clearRing = async () => { await dbDel('settings', 'ringtone'); renderApp(); };
+
+  window.showHistory = async () => {
+    const allRecs = await dbGetAll('recs');
+    const sorted = allRecs.sort((a, b) => b.key.localeCompare(a.key)).slice(0, 100);
+    let html = '<div class="modal"><div class="modal-content"><h2>📅 服药历史</h2>';
+    if (!sorted.length) html += '<div style="padding:20px;color:var(--text2);">暂无记录</div>';
+    else sorted.forEach(r => {
+      const [date, medId, time] = r.key.split('||');
+      const med = meds.find(m => m.id === medId);
+      const name = med ? med.name : medId;
+      html += `<div style="padding:8px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;"><span>${date} ${time}</span><span>${name} ${r.taken?'✅':'❌'}</span></div>`;
     });
-    html+='<button class="btn" onclick="this.closest(\\'.modal\\').remove()" style="margin-top:12px;">关闭</button></div></div>';
-    document.body.insertAdjacentHTML('beforeend',html);
+    html += '<button class="btn" onclick="this.closest(\\'.modal\\').remove()" style="margin-top:12px;">关闭</button></div></div>';
+    document.body.insertAdjacentHTML('beforeend', html);
   };
 
-  window.exportData=async()=>{
-    const data={meds:await dbGetAll('meds'),recs:await dbGetAll('recs'),settings:await dbGetAll('settings'),contacts:await dbGetAll('contacts')};
-    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='用药提醒备份.json';a.click();
+  window.exportData = async () => {
+    const data = {
+      meds: await dbGetAll('meds'),
+      recs: await dbGetAll('recs'),
+      settings: await dbGetAll('settings'),
+      contacts: await dbGetAll('contacts')
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = '用药提醒备份.json'; a.click();
   };
-  window.importData=async(e)=>{
-    const file=e.target.files[0]; if(!file)return;
-    const reader=new FileReader();
-    reader.onload=async ev=>{
-      try{
-        const data=JSON.parse(ev.target.result);
-        if(confirm('导入数据将合并到现有数据，是否继续？')){
-          if(data.meds) for(const m of data.meds) await dbPut('meds',m);
-          if(data.recs) for(const r of data.recs) await dbPut('recs',r);
-          if(data.settings) for(const s of data.settings) await dbPut('settings',s);
-          if(data.contacts) for(const c of data.contacts) await dbPut('contacts',c);
+
+  window.importData = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async ev => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (confirm('导入将合并到现有数据，继续？')) {
+          if (data.meds) for (const m of data.meds) await dbPut('meds', m);
+          if (data.recs) for (const r of data.recs) await dbPut('recs', r);
+          if (data.settings) for (const s of data.settings) await dbPut('settings', s);
+          if (data.contacts) for (const c of data.contacts) await dbPut('contacts', c);
           alert('导入成功！'); renderApp();
         }
-      }catch(ex){alert('文件格式错误');}
+      } catch (ex) { alert('文件格式错误'); }
     };
     reader.readAsText(file);
   };
 
-  function exportCalendar(){
-    let ics='BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nPRODID:-//用药提醒//CN\\r\\n';
-    meds.forEach(m=>{
-      m.times.forEach(t=>{
-        const [h,min]=t.split(':');
-        const now=new Date();
-        const start=new Date(now.getFullYear(),now.getMonth(),now.getDate(),parseInt(h),parseInt(min),0);
-        const end=new Date(start.getTime()+15*60000);
-        const fmt=d=>d.toISOString().replace(/[-:]/g,'').replace(/\\.\\d{3}/,'');
-        ics+=`BEGIN:VEVENT\\r\\nSUMMARY:💊 ${m.name} ${m.dosage||''}\\r\\nDTSTART:${fmt(start)}\\r\\nDTEND:${fmt(end)}\\r\\nDESCRIPTION:${m.type==='injection'?'注射':'口服'} ${m.dosage||''}\\r\\nRRULE:FREQ=DAILY\\r\\nBEGIN:VALARM\\r\\nTRIGGER:-PT0M\\r\\nACTION:AUDIO\\r\\nEND:VALARM\\r\\nEND:VEVENT\\r\\n`;
+  function exportCalendar() {
+    let ics = 'BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nPRODID:-//用药提醒//CN\\r\\n';
+    meds.forEach(m => {
+      m.times.forEach(t => {
+        const [h, min] = t.split(':');
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(h), parseInt(min), 0);
+        const end = new Date(start.getTime() + 15 * 60000);
+        const fmt = d => d.toISOString().replace(/[-:]/g, '').replace(/\\.\\d{3}/, '');
+        ics += `BEGIN:VEVENT\\r\\nSUMMARY:💊 ${m.name} ${m.dosage||''}\\r\\nDTSTART:${fmt(start)}\\r\\nDTEND:${fmt(end)}\\r\\nDESCRIPTION:${m.type==='injection'?'注射':'口服'} ${m.dosage||''}\\r\\nRRULE:FREQ=DAILY\\r\\nBEGIN:VALARM\\r\\nTRIGGER:-PT0M\\r\\nACTION:AUDIO\\r\\nEND:VALARM\\r\\nEND:VEVENT\\r\\n`;
       });
     });
-    ics+='END:VCALENDAR';
-    const blob=new Blob([ics],{type:'text/calendar;charset=utf-8'});
-    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='用药提醒.ics';a.click();
+    ics += 'END:VCALENDAR';
+    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = '用药提醒.ics'; a.click();
   }
 
-  /* ========== 唤醒检查 ========== */
-  async function wakeUpCheck(){
-    await checkReminders(); await checkMissed(); renderApp();
+  /* ========== 首次引导 ========== */
+  async function checkFirstRun() {
+    const guided = await getSetting('guided', 'false');
+    if (guided === 'true') return;
+    const guide = document.createElement('div'); guide.className = 'guide-overlay';
+    guide.innerHTML = `
+      <div class="guide-card">
+        <h2>👋 欢迎使用用药提醒</h2>
+        <p>拍照加药，到点手机会响铃。</p>
+        <div class="guide-highlight">👉 点右下角 <strong>+</strong> 开始</div>
+        <button class="btn" id="closeGuide">知道了，开始用</button>
+      </div>`;
+    document.body.appendChild(guide);
+    document.getElementById('closeGuide').onclick = async () => {
+      guide.remove(); await setSetting('guided', 'true');
+      if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+    };
   }
 
   /* ========== 初始化 ========== */
-  async function init(){
-    try{await openDB();}catch(e){return;}
-    const night=await getSetting('nightMode','false')==='true';
-    if(night) document.body.classList.add('night');
+  async function init() {
+    try {
+      await openDB();
+    } catch (e) {
+      showError('数据库初始化失败，请刷新重试。');
+      return;
+    }
+    const night = await getSetting('nightMode', 'false') === 'true';
+    if (night) document.body.classList.add('night');
     await renderApp();
     await checkFirstRun();
-    // 请求通知
-    if('Notification' in window && Notification.permission==='default') Notification.requestPermission();
-    setInterval(async()=>{await checkReminders(); await checkMissed(); renderApp();},30000);
-    document.addEventListener('visibilitychange',()=>{
-      if(document.visibilityState==='visible') wakeUpCheck();
+
+    if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+
+    // 定时循环，异常隔离
+    setInterval(() => {
+      try { checkReminders(); } catch (e) {}
+      try { checkMissed(); } catch (e) {}
+      try { renderApp(); } catch (e) {}
+    }, 30000);
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        try { checkReminders(); } catch (e) {}
+        try { checkMissed(); } catch (e) {}
+        try { renderApp(); } catch (e) {}
+      }
     });
-    // 安卓端请求忽略电池优化（通过PWABuilder注入的权限会体现）
+
+    // 初始检查
+    try { checkReminders(); } catch (e) {}
+    try { checkMissed(); } catch (e) {}
   }
-  init().catch(console.error);
-  if('serviceWorker' in navigator) navigator.serviceWorker.register("data:application/javascript,"+encodeURIComponent("self.addEventListener('fetch',e=>{e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));});"));
+
+  // 启动
+  init().catch(e => showError('启动失败：' + e.message));
+
+  // Service Worker 离线缓存
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register("data:application/javascript," + encodeURIComponent(
+      "self.addEventListener('fetch',e=>{e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));});"
+    )).catch(() => {});
+  }
 })();
 </script>
 </body>
