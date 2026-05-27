@@ -1,1 +1,9 @@
-
+{
+  "name": "吃药提醒小工具",
+  "short_name": "吃药提醒",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "permissions": ["alarms", "notifications"]
+}
