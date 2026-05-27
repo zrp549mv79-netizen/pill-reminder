@@ -47,7 +47,7 @@
     .time-chip.pending{background:#fef9c3;color:#854d0e;}
     .btn{padding:12px 20px;border-radius:20px;border:none;font-weight:600;background:var(--prim);color:#fff;font-size:16px;cursor:pointer;box-shadow:0 4px 12px rgba(37,99,235,0.2);}
     .btn-outline{background:transparent;color:var(--prim);border:2px solid var(--prim);box-shadow:none;}
-    .fab{position:fixed;bottom:28px;right:28px;width:60px;height:60px;border-radius:50%;background:var(--prim);color:#fff;border:none;font-size:32px;cursor:pointer;box-shadow:0 10px 24px rgba(37,99,235,0.35);z-index:10;display:flex;align-items:center;justify-content:center;}
+    .fab{position:fixed;bottom:28px;right:28px;width:60px;height=60px;border-radius:50%;background:var(--prim);color:#fff;border:none;font-size:32px;cursor:pointer;box-shadow:0 10px 24px rgba(37,99,235,0.35);z-index:10;display:flex;align-items:center;justify-content:center;}
     .modal{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:flex-end;justify-content:center;z-index:200;backdrop-filter:blur(4px);}
     .modal-content{background:var(--card);color:var(--text);width:100%;max-width:500px;border-radius:28px 28px 0 0;padding:24px;max-height:85vh;overflow-y:auto;animation:slideUp 0.3s ease;}
     @keyframes slideUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
@@ -55,7 +55,7 @@
     .reminder-box{background:var(--card);color:var(--text);border-radius:28px;padding:24px;width:92%;max-width:420px;box-shadow:0 24px 48px rgba(0,0,0,0.2);animation:pop 0.3s ease;}
     @keyframes pop{from{transform:scale(0.9);opacity:0;}to{transform:scale(1);opacity:1;}}
     .alert-siren{position:fixed;inset:0;background:rgba(239,68,68,0.95);z-index:400;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#fff;text-align:center;padding:24px;}
-    .rem-check{width:32px;height:32px;accent-color:#2563eb;cursor:pointer;}
+    .rem-check{width:32px;height=32px;accent-color:#2563eb;cursor:pointer;}
     input,select,button{font-size:16px;padding:12px;border-radius:14px;border:2px solid #cbd5e1;width:100%;margin-bottom:12px;background:#fff;color:#1e293b;}
     .night input,.night select,.night button{background:#334155;color:#e2e8f0;border-color:#475569;}
     .form-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
@@ -407,7 +407,7 @@ function openMedModal(edit = null) {
     const input = document.getElementById('quickTimes');
     if (!input) return;
     const raw = input.value;
-    const times = raw.split(/[,，\\s]+/).filter(t => /^\\d{1,2}:\\d{2}$/.test(t.trim()));
+    const times = raw.split(/[,，\s]+/).filter(t => /^\d{1,2}:\d{2}$/.test(t.trim()));
     if (times.length === 0) { alert('请按格式输入，如 08:00, 12:00'); return; }
     const container = document.getElementById('tc');
     container.innerHTML = '';
@@ -475,7 +475,7 @@ function showReminder(items, time) {
         <div style="color:var(--text2);margin:4px 0 16px;">${time}</div>
         ${items.map((it, idx) => `
           <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #eee;">
-            ${it.image ? `<img src="${it.image}" style="width:56px;height:56px;border-radius:16px;object-fit:cover;" alt="药品">` : ''}
+            ${it.image ? `<img src="${it.image}" style="width:56px;height=56px;border-radius:16px;object-fit:cover;" alt="药品">` : ''}
             <div style="flex:1;"><strong>${esc(it.medName)}</strong><br><span style="color:var(--text2);">${it.type==='injection'?'💉 注射':'💊 口服'} · ${esc(it.dosage||'')}</span></div>
             <input type="checkbox" class="rem-check" data-idx="${idx}">
           </div>`).join('')}
@@ -605,7 +605,7 @@ window.dismissAlert = () => {
       const name = med ? med.name : medId;
       html += `<div style="padding:8px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;"><span>${date} ${time}</span><span>${name} ${r.taken?'✅':'❌'}</span></div>`;
     });
-    html += '<button class="btn" onclick="this.closest(\\'.modal\\').remove()" style="margin-top:12px;">关闭</button></div></div>';
+    html += '<button class="btn" onclick="this.closest(\'.modal\').remove()" style="margin-top:12px;">关闭</button></div></div>';
     document.body.insertAdjacentHTML('beforeend', html);
   };
 
@@ -640,15 +640,15 @@ window.dismissAlert = () => {
   };
 
   function exportCalendar() {
-    let ics = 'BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nPRODID:-//用药提醒//CN\\r\\n';
+    let ics = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//用药提醒//CN\r\n';
     meds.forEach(m => {
       m.times.forEach(t => {
         const [h, min] = t.split(':');
         const now = new Date();
         const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(h), parseInt(min), 0);
         const end = new Date(start.getTime() + 15 * 60000);
-        const fmt = d => d.toISOString().replace(/[-:]/g, '').replace(/\\.\\d{3}/, '');
-        ics += `BEGIN:VEVENT\\r\\nSUMMARY:💊 ${m.name} ${m.dosage||''}\\r\\nDTSTART:${fmt(start)}\\r\\nDTEND:${fmt(end)}\\r\\nDESCRIPTION:${m.type==='injection'?'注射':'口服'} ${m.dosage||''}\\r\\nRRULE:FREQ=DAILY\\r\\nBEGIN:VALARM\\r\\nTRIGGER:-PT0M\\r\\nACTION:AUDIO\\r\\nEND:VALARM\\r\\nEND:VEVENT\\r\\n`;
+        const fmt = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+        ics += `BEGIN:VEVENT\r\nSUMMARY:💊 ${m.name} ${m.dosage||''}\r\nDTSTART:${fmt(start)}\r\nDTEND:${fmt(end)}\r\nDESCRIPTION:${m.type==='injection'?'注射':'口服'} ${m.dosage||''}\r\nRRULE:FREQ=DAILY\r\nBEGIN:VALARM\r\nTRIGGER:-PT0M\r\nACTION:AUDIO\r\nEND:VALARM\r\nEND:VEVENT\r\n`;
       });
     });
     ics += 'END:VCALENDAR';
